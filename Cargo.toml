@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 bevy = "0.16.1"
-eahla-chess = { git = "https://github.com/INDA25PlusPlus/eahla-chess.git" }
+bevy_svg = { version = "0.16.0-rc1", features = ["2d"] }
+hermanha-chess = { git = "https://github.com/INDA25PlusPlus/hermanha-chess.git" }
