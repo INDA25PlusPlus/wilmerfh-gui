@@ -13,6 +13,9 @@ struct Square {
     pos: Position,
 }
 
+#[derive(Resource, Deref)]
+struct BoardState(Board);
+
 #[derive(Component, Debug, Clone, Copy)]
 #[allow(dead_code)]
 #[require(Transform, Sprite)]
@@ -32,14 +35,25 @@ fn pos_to_vec3(pos: Position, z: f32) -> Vec3 {
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, SvgPlugin))
-        .add_systems(Startup, setup)
+        .insert_resource(BoardState(Board::start_pos()))
+        .add_systems(Startup, (setup_camera, render_board))
         .run();
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
 
-    let board = Board::start_pos();
+fn render_board(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    board: Res<BoardState>,
+    squares: Query<Entity, With<Square>>,
+    pieces: Query<Entity, With<Piece>>,
+) {
+    for entity in squares.iter().chain(pieces.iter()) {
+        commands.entity(entity).despawn();
+    }
 
     for row in 0..BOARD_ROWS as usize {
         for col in 0..BOARD_COLS as usize {
