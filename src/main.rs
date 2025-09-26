@@ -9,12 +9,6 @@ const PIECE_SCALE: f32 = TILE_SIZE / 45.0;
 const PIECE_Z: f32 = 1.0;
 const BOARD_OFFSET: f32 = (BOARD_COLS as f32 - 1.0) * 0.5;
 
-#[derive(Component, Debug, Clone, Copy)]
-#[require(Transform, Sprite)]
-struct Square {
-    pos: Position,
-}
-
 #[derive(Resource, Deref)]
 struct BoardState(Board);
 
@@ -22,7 +16,6 @@ struct BoardState(Board);
 struct SelectedSquare(Option<Position>);
 
 #[derive(Component, Debug, Clone, Copy)]
-#[allow(dead_code)]
 #[require(Transform, Sprite)]
 struct Piece {
     type_: PieceType,
@@ -82,7 +75,8 @@ fn main() {
         .insert_resource(BoardState(Board::start_pos()))
         .init_resource::<SelectedSquare>()
         .add_systems(Startup, setup_camera)
-        .add_systems(Update, (handle_square_selection, render_board))
+        .add_systems(Startup, render_board)
+        .add_systems(Update, (handle_square_selection, render_pieces))
         .run();
 }
 
@@ -90,12 +84,25 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn render_board(
+fn render_board(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let board = Board::start_pos();
+    let squares = board.squares;
+
+    for row in 0..BOARD_ROWS as usize {
+        for col in 0..BOARD_COLS as usize {
+            let render_pos = Position::new(row as i8, col as i8);
+
+            let color = square_color(render_pos);
+            spawn_square(&mut commands, render_pos, color);
+        }
+    }
+}
+
+fn render_pieces(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     board: Res<BoardState>,
     selected: Res<SelectedSquare>,
-    squares: Query<Entity, With<Square>>,
     pieces: Query<Entity, With<Piece>>,
     mut initialized: Local<bool>,
 ) {
@@ -105,7 +112,7 @@ fn render_board(
 
     *initialized = true;
 
-    for entity in squares.iter().chain(pieces.iter()) {
+    for entity in pieces.iter().chain(pieces.iter()) {
         commands.entity(entity).despawn();
     }
 
@@ -115,11 +122,8 @@ fn render_board(
     for row in 0..BOARD_ROWS as usize {
         for col in 0..BOARD_COLS as usize {
             let render_pos = Position::new(row as i8, col as i8);
-
-            let color = square_color_for_state(render_pos, selected_pos, &legal_targets);
-            spawn_square(&mut commands, render_pos, color);
-
-            if let Some(piece) = board.squares[row][col] {
+            let square = board.get(render_pos);
+            if let Some(piece) = square {
                 spawn_piece(&mut commands, &asset_server, piece, render_pos);
             }
         }
@@ -179,7 +183,6 @@ fn square_color(pos: Position) -> Color {
 
 fn spawn_square(commands: &mut Commands, pos: Position, color: Color) {
     commands.spawn((
-        Square { pos },
         Sprite {
             color,
             custom_size: Some(Vec2::splat(TILE_SIZE)),
