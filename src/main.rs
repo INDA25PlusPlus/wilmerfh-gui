@@ -44,15 +44,23 @@ fn cursor_to_board_position(
 }
 
 fn selected_legal_targets(board: &Board, selected: Option<Position>) -> Vec<Position> {
-    selected
-        .map(|pos| {
-            board
-                .legal_moves()
-                .into_iter()
-                .filter_map(|(from, to, _)| (from == pos).then_some(to))
-                .collect()
-        })
-        .unwrap_or_default()
+    let Some(selected_pos) = selected else {
+        return Vec::new();
+    };
+    board
+        .legal_moves()
+        .into_iter()
+        .filter(|(from, to, _)| *from == selected_pos)
+        .map(|(from, to, _)| to)
+        .collect()
+}
+
+fn square_color(pos: Position) -> Color {
+    if (pos.row + pos.col) % 2 == 0 {
+        Color::srgb(0.62, 0.42, 0.32)
+    } else {
+        Color::srgb(0.87, 0.81, 0.74)
+    }
 }
 
 fn square_color_for_state(
@@ -74,8 +82,7 @@ fn main() {
         .add_plugins((DefaultPlugins, SvgPlugin))
         .insert_resource(BoardState(Board::start_pos()))
         .init_resource::<SelectedSquare>()
-        .add_systems(Startup, setup_camera)
-        .add_systems(Startup, render_board)
+        .add_systems(Startup, (setup_camera, render_board))
         .add_systems(Update, (handle_square_selection, render_pieces))
         .run();
 }
@@ -106,17 +113,12 @@ fn render_pieces(
     pieces: Query<Entity, With<Piece>>,
     mut initialized: Local<bool>,
 ) {
-    if *initialized && !board.is_changed() && !selected.is_changed() {
-        return;
-    }
-
-    *initialized = true;
-
     for entity in pieces.iter().chain(pieces.iter()) {
         commands.entity(entity).despawn();
     }
 
     let selected_pos = selected.0;
+    let board = &board.0;
     let legal_targets = selected_legal_targets(&board, selected_pos);
 
     for row in 0..BOARD_ROWS as usize {
@@ -135,8 +137,9 @@ fn handle_square_selection(
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    board: Res<BoardState>,
+    mut board: ResMut<BoardState>,
 ) {
+    let board = &mut board.0;
     if !buttons.just_pressed(MouseButton::Left) {
         return;
     }
@@ -161,24 +164,17 @@ fn handle_square_selection(
         selected.0 = None;
         return;
     }
-
-    if board.get(position).is_some() {
-        selected.0 = Some(position);
-    } else {
+    if let Some(moving_pos) = selected.0 {
+        _ = board.play(
+            (moving_pos.row, moving_pos.col),
+            (position.row, position.col),
+            None,
+        );
         selected.0 = None;
+        return;
     }
-}
 
-fn is_dark_square(pos: Position) -> bool {
-    (pos.row + pos.col) % 2 == 0
-}
-
-fn square_color(pos: Position) -> Color {
-    if is_dark_square(pos) {
-        Color::srgb(0.62, 0.42, 0.32)
-    } else {
-        Color::srgb(0.87, 0.81, 0.74)
-    }
+    selected.0 = Some(position);
 }
 
 fn spawn_square(commands: &mut Commands, pos: Position, color: Color) {
