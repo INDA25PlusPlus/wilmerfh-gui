@@ -22,6 +22,9 @@ struct Piece {
     color: hermanha_chess::Color,
 }
 
+#[derive(Component)]
+struct Highlight;
+
 fn pos_to_vec3(pos: Position, z: f32) -> Vec3 {
     Vec3::new(
         (pos.col as f32 - BOARD_OFFSET) * TILE_SIZE,
@@ -83,7 +86,7 @@ fn main() {
         .insert_resource(BoardState(Board::start_pos()))
         .init_resource::<SelectedSquare>()
         .add_systems(Startup, (setup_camera, render_board))
-        .add_systems(Update, (handle_square_selection, render_pieces))
+        .add_systems(Update, (handle_square_selection, render_highlights, render_pieces))
         .run();
 }
 
@@ -129,6 +132,25 @@ fn render_pieces(
                 spawn_piece(&mut commands, &asset_server, piece, render_pos);
             }
         }
+    }
+}
+
+fn render_highlights(
+    mut commands: Commands,
+    board: Res<BoardState>,
+    selected: Res<SelectedSquare>,
+    highlights: Query<Entity, With<Highlight>>,
+) {
+    for entity in highlights.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    let selected_pos = selected.0;
+    let board = &board.0;
+    let legal_targets = selected_legal_targets(board, selected_pos);
+
+    for target in legal_targets {
+        spawn_highlight(&mut commands, target);
     }
 }
 
@@ -185,6 +207,18 @@ fn spawn_square(commands: &mut Commands, pos: Position, color: Color) {
             ..default()
         },
         Transform::from_translation(pos_to_vec3(pos, 0.0)),
+    ));
+}
+
+fn spawn_highlight(commands: &mut Commands, pos: Position) {
+    commands.spawn((
+        Highlight,
+        Sprite {
+            color: Color::srgba(0.72, 0.82, 0.46, 0.6),
+            custom_size: Some(Vec2::splat(TILE_SIZE)),
+            ..default()
+        },
+        Transform::from_translation(pos_to_vec3(pos, 0.5)),
     ));
 }
 
