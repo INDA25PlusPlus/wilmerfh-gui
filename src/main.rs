@@ -2,10 +2,9 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_svg::prelude::*;
-use hermanha_chess::{BOARD_COLS, BOARD_ROWS, Board, Piece as HermanhaPiece, PieceType, Position};
 use hermanha_chess::{
-    BOARD_COLS, BOARD_ROWS, Board, Color as HermanhaColor, GameResult, Piece as HermanhaPiece,
-    PieceType, Position,
+    BOARD_COLS, BOARD_ROWS, Board, Color as HermanhaColor, GameResult, MoveOk,
+    Piece as HermanhaPiece, PieceType, Position,
 };
 
 const TILE_SIZE: f32 = 64.0;
@@ -182,11 +181,17 @@ fn handle_square_selection(
     }
     if let Some(moving_pos) = selected.0 {
         if legal_targets(board, moving_pos).contains(&position) {
-            _ = board.play(
+            if let Ok(MoveOk::NeedsPromotion) = board.play(
                 (moving_pos.row, moving_pos.col),
                 (position.row, position.col),
                 None,
-            );
+            ) {
+                board.play(
+                    (moving_pos.row, moving_pos.col),
+                    (position.row, position.col),
+                    Some(PieceType::Queen),
+                );
+            }
             selected.0 = None;
             return;
         }
