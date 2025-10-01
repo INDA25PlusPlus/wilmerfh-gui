@@ -3,6 +3,10 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_svg::prelude::*;
 use hermanha_chess::{BOARD_COLS, BOARD_ROWS, Board, Piece as HermanhaPiece, PieceType, Position};
+use hermanha_chess::{
+    BOARD_COLS, BOARD_ROWS, Board, Color as HermanhaColor, GameResult, Piece as HermanhaPiece,
+    PieceType, Position,
+};
 
 const TILE_SIZE: f32 = 64.0;
 const PIECE_SCALE: f32 = TILE_SIZE / 45.0;
@@ -46,15 +50,12 @@ fn cursor_to_board_position(
     Some(Position::new(row, col))
 }
 
-fn selected_legal_targets(board: &Board, selected: Option<Position>) -> Vec<Position> {
-    let Some(selected_pos) = selected else {
-        return Vec::new();
-    };
+fn legal_targets(board: &Board, selected_pos: Position) -> Vec<Position> {
     board
         .legal_moves()
         .into_iter()
-        .filter(|(from, to, _)| *from == selected_pos)
-        .map(|(from, to, _)| to)
+        .filter(|(from, _, _)| *from == selected_pos)
+        .map(|(_, to, _)| to)
         .collect()
 }
 
@@ -66,27 +67,21 @@ fn square_color(pos: Position) -> Color {
     }
 }
 
-fn square_color_for_state(
-    pos: Position,
-    selected: Option<Position>,
-    legal_targets: &[Position],
-) -> Color {
-    if Some(pos) == selected {
-        Color::srgb(0.86, 0.87, 0.35)
-    } else if legal_targets.contains(&pos) {
-        Color::srgb(0.72, 0.82, 0.46)
-    } else {
-        square_color(pos)
-    }
-}
-
 fn main() {
     App::new()
         .add_plugins((DefaultPlugins, SvgPlugin))
         .insert_resource(BoardState(Board::start_pos()))
         .init_resource::<SelectedSquare>()
         .add_systems(Startup, (setup_camera, render_board))
-        .add_systems(Update, (handle_square_selection, render_highlights, render_pieces))
+        .add_systems(
+            Update,
+            (
+                handle_square_selection,
+                render_highlights,
+                render_pieces,
+                render_game_over,
+            ),
+        )
         .run();
 }
 
@@ -94,10 +89,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn render_board(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let board = Board::start_pos();
-    let squares = board.squares;
-
+fn render_board(mut commands: Commands) {
     for row in 0..BOARD_ROWS as usize {
         for col in 0..BOARD_COLS as usize {
             let render_pos = Position::new(row as i8, col as i8);
@@ -112,18 +104,12 @@ fn render_pieces(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     board: Res<BoardState>,
-    selected: Res<SelectedSquare>,
     pieces: Query<Entity, With<Piece>>,
-    mut initialized: Local<bool>,
 ) {
     for entity in pieces.iter().chain(pieces.iter()) {
         commands.entity(entity).despawn();
     }
-
-    let selected_pos = selected.0;
     let board = &board.0;
-    let legal_targets = selected_legal_targets(&board, selected_pos);
-
     for row in 0..BOARD_ROWS as usize {
         for col in 0..BOARD_COLS as usize {
             let render_pos = Position::new(row as i8, col as i8);
@@ -145,13 +131,27 @@ fn render_highlights(
         commands.entity(entity).despawn();
     }
 
-    let selected_pos = selected.0;
+    let Some(selected_pos) = selected.0 else {
+        return;
+    };
     let board = &board.0;
-    let legal_targets = selected_legal_targets(board, selected_pos);
+    let legal_targets = legal_targets(board, selected_pos);
 
     for target in legal_targets {
         spawn_highlight(&mut commands, target);
     }
+}
+
+fn render_game_over(mut commands: Commands, board: Res<BoardState>) {
+    let Some(game_result) = board.0.game_over() else {
+        return;
+    };
+    let text = match game_result {
+        GameResult::Checkmate(HermanhaColor::White) => "White wins by checkmate".to_string(),
+        GameResult::Checkmate(HermanhaColor::Black) => "Black wins by checkmate".to_string(),
+        GameResult::Stalemate => "Stalemate".to_string(),
+    };
+    commands.spawn(Text2d::new(text));
 }
 
 fn handle_square_selection(
@@ -165,37 +165,32 @@ fn handle_square_selection(
     if !buttons.just_pressed(MouseButton::Left) {
         return;
     }
-
     let Some(window) = windows.iter().next() else {
         return;
     };
-
     let Some(cursor_position) = window.cursor_position() else {
         return;
     };
-
     let Some((camera, camera_transform)) = camera_q.iter().next() else {
         return;
     };
-
     let Some(position) = cursor_to_board_position(cursor_position, camera, camera_transform) else {
         return;
     };
-
     if !board.pos_on_board(position) {
-        selected.0 = None;
         return;
     }
     if let Some(moving_pos) = selected.0 {
-        _ = board.play(
-            (moving_pos.row, moving_pos.col),
-            (position.row, position.col),
-            None,
-        );
-        selected.0 = None;
-        return;
+        if legal_targets(board, moving_pos).contains(&position) {
+            _ = board.play(
+                (moving_pos.row, moving_pos.col),
+                (position.row, position.col),
+                None,
+            );
+            selected.0 = None;
+            return;
+        }
     }
-
     selected.0 = Some(position);
 }
 
@@ -266,7 +261,6 @@ fn spawn_piece(
             asset_server.load("pieces/Chess_kdt45.svg")
         }
     };
-
     commands.spawn((
         Piece {
             type_: piece.piece_type,
