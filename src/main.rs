@@ -1,3 +1,7 @@
+mod tcp;
+
+use std::env;
+
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -7,6 +11,8 @@ use hermanha_chess::{
     Piece as HermanhaPiece, PieceType, Position,
 };
 
+use crate::tcp::{ConnectionType, Message, MoveMessage, TcpConnection, TcpError};
+
 const TILE_SIZE: f32 = 64.0;
 const PIECE_SCALE: f32 = TILE_SIZE / 45.0;
 const PIECE_Z: f32 = 1.0;
@@ -14,6 +20,12 @@ const BOARD_OFFSET: f32 = (BOARD_COLS as f32 - 1.0) * 0.5;
 
 #[derive(Resource, Deref)]
 struct BoardState(Board);
+
+#[derive(Resource, Deref)]
+struct PlayerColor(HermanhaColor);
+
+#[derive(Resource)]
+struct Connection(TcpConnection);
 
 #[derive(Resource, Default)]
 struct SelectedSquare(Option<Position>);
@@ -67,9 +79,37 @@ fn square_color(pos: Position) -> Color {
 }
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    assert_eq!(
+        args.len(),
+        3,
+        "Two args has to be provided. <server/client> <address>"
+    );
+    let connection_type = &args[1];
+    let addr = &args[2];
+
+    let connection_type = match connection_type.as_str() {
+        "server" => ConnectionType::Server,
+        "client" => ConnectionType::Client,
+        _ => {
+            panic!("Invalid argument: {}", connection_type);
+        }
+    };
+    let connection = match connection_type {
+        ConnectionType::Server => TcpConnection::start_server(addr).unwrap(),
+        ConnectionType::Client => TcpConnection::connect_to_server(addr).unwrap(),
+    };
+    let player_color = if connection_type == ConnectionType::Client {
+        PlayerColor(HermanhaColor::White)
+    } else {
+        PlayerColor(HermanhaColor::Black)
+    };
+
     App::new()
         .add_plugins((DefaultPlugins, SvgPlugin))
         .insert_resource(BoardState(Board::start_pos()))
+        .insert_resource(player_color)
+        .insert_resource(Connection(connection))
         .init_resource::<SelectedSquare>()
         .add_systems(Startup, (setup_camera, render_board))
         .add_systems(
@@ -159,8 +199,27 @@ fn handle_square_selection(
     windows: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     mut board: ResMut<BoardState>,
+    player_color: Res<PlayerColor>,
+    mut connection: ResMut<Connection>,
 ) {
     let board = &mut board.0;
+    if board.move_turn != player_color.0 {
+        selected.0 = None;
+        let msg = match connection.0.read() {
+            Ok(msg) => msg,
+            Err(TcpError::WouldBlock) => return,
+            Err(err) => panic!("Error reading message: {}", err),
+        };
+        let (from, to, promotion_piece) = match msg {
+            Message::Move(move_data) => (move_data.from, move_data.to, move_data.promotion_piece),
+            Message::Quit(quit_data) => {
+                panic!("{}", quit_data.message.unwrap_or("Quit".to_string()))
+            }
+        };
+        board
+            .play((from.row, from.col), (to.row, to.col), promotion_piece)
+            .unwrap();
+    }
     if !buttons.just_pressed(MouseButton::Left) {
         return;
     }
@@ -181,17 +240,29 @@ fn handle_square_selection(
     }
     if let Some(moving_pos) = selected.0 {
         if legal_targets(board, moving_pos).contains(&position) {
+            let mut promotion_piece: Option<PieceType> = None;
             if let Ok(MoveOk::NeedsPromotion) = board.play(
                 (moving_pos.row, moving_pos.col),
                 (position.row, position.col),
-                None,
+                promotion_piece,
             ) {
-                board.play(
+                promotion_piece = Some(PieceType::Queen);
+                _ = board.play(
                     (moving_pos.row, moving_pos.col),
                     (position.row, position.col),
-                    Some(PieceType::Queen),
+                    promotion_piece,
                 );
             }
+            let result = board.game_over();
+            let move_msg = MoveMessage {
+                from: moving_pos,
+                to: position,
+                promotion_piece,
+                result,
+                new_board: board.clone(),
+            };
+            let msg = Message::Move(move_msg);
+            connection.0.write(msg).unwrap();
             selected.0 = None;
             return;
         }
