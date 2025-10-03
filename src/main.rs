@@ -32,10 +32,7 @@ struct SelectedSquare(Option<Position>);
 
 #[derive(Component, Debug, Clone, Copy)]
 #[require(Transform, Sprite)]
-struct Piece {
-    type_: PieceType,
-    color: hermanha_chess::Color,
-}
+struct Piece {}
 
 #[derive(Component)]
 struct Highlight;
@@ -338,10 +335,7 @@ fn spawn_piece(
         }
     };
     commands.spawn((
-        Piece {
-            type_: piece.piece_type,
-            color: piece.color,
-        },
+        Piece {},
         Svg2d(svg),
         Origin::Center,
         Transform {

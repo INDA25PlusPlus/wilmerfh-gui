@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use hermanha_chess::{Board, Color, GameResult, Piece, PieceType, Position};
+use hermanha_chess::{Board, Color, GameResult, PieceType, Position};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConnectionType {
