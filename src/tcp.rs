@@ -168,12 +168,12 @@ fn board_to_fen(board: &Board) -> String {
     for row in 0..8 {
         let mut empty_count = 0;
         for col in 0..8 {
-            let Some(piece) = board.get(Position::new(row, col)) else {
+            let Some(piece) = board.get(Position::new(7 - row, col)) else {
                 empty_count += 1;
                 continue;
             };
             if empty_count != 0 {
-                ret.push_str(&"0".repeat(empty_count));
+                ret.push_str(&format!("{empty_count}"));
                 empty_count = 0;
             }
             let piece_type_char = piece_type_to_char(piece.piece_type);
@@ -182,6 +182,9 @@ fn board_to_fen(board: &Board) -> String {
                 Color::Black => piece_type_char.to_ascii_lowercase(),
             };
             ret.push(piece_char);
+        }
+        if empty_count != 0 {
+            ret.push_str(&format!("{empty_count}"));
         }
         if row != 7 {
             ret.push('/');
