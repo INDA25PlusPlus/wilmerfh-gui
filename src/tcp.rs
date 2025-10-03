@@ -163,7 +163,7 @@ fn game_result_from_string(s: &str) -> Result<Option<GameResult>, String> {
     }
 }
 
-fn board_to_fen(board: &Board) -> String {
+pub fn board_to_fen(board: &Board) -> String {
     let mut ret = String::new();
     for row in 0..8 {
         let mut empty_count = 0;

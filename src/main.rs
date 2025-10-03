@@ -11,7 +11,9 @@ use hermanha_chess::{
     Piece as HermanhaPiece, PieceType, Position,
 };
 
-use crate::tcp::{ConnectionType, Message, MoveMessage, TcpConnection, TcpError};
+use crate::tcp::{
+    ConnectionType, Message, MoveMessage, QuitMessage, TcpConnection, TcpError, board_to_fen,
+};
 
 const TILE_SIZE: f32 = 64.0;
 const PIECE_SCALE: f32 = TILE_SIZE / 45.0;
@@ -208,15 +210,36 @@ fn handle_square_selection(
             Err(TcpError::WouldBlock) => return,
             Err(err) => panic!("Error reading message: {}", err),
         };
-        let (from, to, promotion_piece) = match msg {
-            Message::Move(move_data) => (move_data.from, move_data.to, move_data.promotion_piece),
+        let (from, to, promotion_piece, result, new_board) = match msg {
+            Message::Move(move_data) => (
+                move_data.from,
+                move_data.to,
+                move_data.promotion_piece,
+                move_data.result,
+                move_data.new_board,
+            ),
             Message::Quit(quit_data) => {
                 panic!("{}", quit_data.message.unwrap_or("Quit".to_string()))
             }
         };
         board
             .play((from.row, from.col), (to.row, to.col), promotion_piece)
-            .unwrap();
+            .expect("Move not valid");
+        if board_to_fen(board) != board_to_fen(&new_board) {
+            connection
+                .0
+                .write(Message::Quit(QuitMessage {
+                    message: Some("Boards does not match!".to_string()),
+                }))
+                .unwrap();
+            panic!("Boards does not match");
+        }
+        match result {
+            Some(GameResult::Checkmate(color)) => panic!("Checkmate for {:?}", color),
+            Some(GameResult::Stalemate) => panic!("Stalemate"),
+            None => (),
+        }
+        return;
     }
     if !buttons.just_pressed(MouseButton::Left) {
         return;
