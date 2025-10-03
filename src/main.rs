@@ -142,7 +142,8 @@ fn render_pieces(
     board: Res<BoardState>,
     pieces: Query<Entity, With<Piece>>,
 ) {
-    for entity in pieces.iter().chain(pieces.iter()) {
+    let piece_entities: Vec<Entity> = pieces.iter().collect();
+    for entity in piece_entities {
         commands.entity(entity).despawn();
     }
     let board = &board.0;
